@@ -12,7 +12,7 @@ pub enum Inst {
     Move2(i16, i16),
     Move3(i16, i16, i16),
     Move(u32),
-    Payload(i32, u8),
+    Mul(i32, u8),
     Open(u32),
     Close(u32),
     Skip(i32),
@@ -42,17 +42,21 @@ impl LongInst {
             LongInst::Move(targets) => {
                 if targets.iter().all(|&(offset, weight)| (weight == 1) && (i16::MIN as i32 <= offset) && (offset <= i16::MAX as i32)) {
                     if targets.len() == 1 {
-                        return vec![Inst::Move3(targets[0].0 as i16, 0, 0)];
+                        return vec![Inst::Move1(targets[0].0 as i16)];
                     } else if targets.len() == 2 {
-                        return vec![Inst::Move3(targets[0].0 as i16, targets[1].0 as i16, 0)];
+                        return vec![Inst::Move2(targets[0].0 as i16, targets[1].0 as i16)];
                     } else if targets.len() == 3 {
                         return vec![Inst::Move3(targets[0].0 as i16, targets[1].0 as i16, targets[2].0 as i16)];
+                    }
+                } else {
+                    if targets.len() == 1 {
+                        return vec![Inst::Mul(targets[0].0, targets[0].1 as u8)];
                     }
                 }
                 let mut flat = Vec::new();
                 flat.push(Inst::Move(targets.len() as u32));
                 for &(offset, weight) in targets {
-                    flat.push(Inst::Payload(offset, weight as u8));
+                    flat.push(Inst::Mul(offset, weight as u8));
                 }
                 flat
             },
@@ -79,7 +83,7 @@ impl Brainfuck {
     pub fn new() -> Self {
         Self { 
            dp: 0,
-            memory: vec![0u8; 1<<16],
+           memory: vec![0u8; 1<<16],
         }
     }
 
@@ -277,8 +281,14 @@ impl Brainfuck {
                 },
                 Inst::Input => {
                     let mut buf = [0];
-                    io::stdin().read_exact(&mut buf).unwrap();
-                    self.memory[self.dp] = buf[0];
+                    match io::stdin().read_exact(&mut buf) {
+                        Ok(()) => {
+                            self.memory[self.dp] = buf[0];
+                        },
+                        Err(_) => {
+                            self.memory[self.dp] = 0;
+                        },
+                    }
                     ip += 1;
                 },
                 Inst::Reset => {
@@ -318,11 +328,21 @@ impl Brainfuck {
                     }
                     ip += 1;
                 },
+                Inst::Mul(offset, weight) => {
+                    if self.memory[self.dp] != 0 {
+                        let val = self.memory[self.dp];
+                        let pos = (self.dp as isize + offset as isize) as usize;
+                        let inc = val.wrapping_mul(weight);
+                        self.memory[pos] = self.memory[pos].wrapping_add(inc);
+                        self.memory[self.dp] = 0;
+                    }
+                    ip += 1;
+                }
                 Inst::Move(len) => {
                     if self.memory[self.dp] != 0 {
                         let val = self.memory[self.dp];
                         for idx in 0..len as usize {
-                            if let Inst::Payload(offset, weight) = prog[ip + idx + 1] {
+                            if let Inst::Mul(offset, weight) = prog[ip + idx + 1] {
                                 let pos = (self.dp as isize + offset as isize) as usize;
                                 let inc = val.wrapping_mul(weight);
                                 self.memory[pos] = self.memory[pos].wrapping_add(inc);
@@ -351,9 +371,6 @@ impl Brainfuck {
                         self.dp = (self.dp as i32 + n) as usize;
                     }
                     ip += 1;
-                },
-                Inst::Payload(..) => {
-                    unreachable!();
                 },
             }
         }
