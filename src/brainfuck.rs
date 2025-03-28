@@ -1,9 +1,10 @@
 use std::io::{self, Read, Write};
 use std::collections::BTreeMap;
+use std::iter::Peekable;
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum InstType {
-    Inc,
-    Shift,
+    ShiftInc,
     Output,
     Input,
     Set,
@@ -14,6 +15,7 @@ pub enum InstType {
     Skip,
 }
 
+#[derive(Debug, Clone)]
 pub struct Inst {
     cmd: InstType,
     offset: i32,
@@ -277,6 +279,170 @@ impl Brainfuck {
             }
         }
         result
+    }
+
+    pub fn structify(prog: Vec<LongInst>) -> Vec<Inst> {
+        fn pick_inc<I: Iterator<Item = LongInst>>(iter: &mut Peekable<I>) -> u8 {
+            if let Some(LongInst::Inc(value)) = iter.peek() {
+                let value = *value;
+                iter.next();
+                return value as u8;
+            }
+            0
+        }
+        fn pick_shift<I: Iterator<Item = LongInst>>(iter: &mut Peekable<I>) -> i16 {
+            if let Some(LongInst::Shift(delta)) = iter.peek() {
+                let delta = *delta;
+                if i16::MIN as i32 <= delta && delta <= i16::MAX as i32 {
+                    iter.next();
+                    return delta as i16;
+                }
+            }
+            0
+        }
+        fn unmatched_flatten<I: Iterator<Item = LongInst>>(iter: &mut Peekable<I>) -> Vec<Inst> {
+            let mut unmatched = Vec::new();
+            while let Some(inst) = iter.next() {
+                match inst {
+                    LongInst::Inc(inc) => {
+                        let inc = inc as u8;
+                        let delta = pick_shift(iter);
+                        unmatched.push(Inst{cmd: InstType::ShiftInc, offset: 0, inc: inc, delta: delta});
+                    },
+                    LongInst::Shift(amount) => {
+                        let amount = amount;
+                        let inc = pick_inc(iter);
+                        let delta = pick_shift(iter);
+                        unmatched.push(Inst{cmd: InstType::ShiftInc, offset: amount, inc: inc, delta: delta});
+                    },
+                    LongInst::Output => {
+                        let inc = pick_inc(iter);
+                        let delta = pick_shift(iter);
+                        unmatched.push(Inst{cmd: InstType::Output, offset: 0, inc: inc, delta: delta});
+                    },
+                    LongInst::Input => {
+                        let inc = pick_inc(iter);
+                        let delta = pick_shift(iter);
+                        unmatched.push(Inst{cmd: InstType::Input, offset: 0, inc: inc, delta: delta});
+                    },
+                    LongInst::Reset => {
+                        let inc = pick_inc(iter);
+                        let delta = pick_shift(iter);
+                        unmatched.push(Inst{cmd: InstType::Set, offset: 0, inc: inc, delta: delta});
+                    },
+                    LongInst::Move(targets) => {
+                        let delta = pick_shift(iter);
+                        if let Some((last, rest)) = targets.split_last() {
+                            for &(offset, weight) in rest {
+                                unmatched.push(Inst{cmd: InstType::Mul, offset: offset, inc: weight as u8, delta: 0});
+                            }
+                            unmatched.push(Inst{cmd: InstType::Mulzero, offset: last.0, inc: last.1 as u8, delta: delta});
+                        } else {
+                            unreachable!("Num of targets of move must at least one.");
+                        }
+                    },
+                    LongInst::Skip(offset) => {
+                        let inc = pick_inc(iter);
+                        let delta = pick_shift(iter);
+                        unmatched.push(Inst{cmd: InstType::Skip, offset: offset, inc: inc, delta: delta});
+                    },
+                    LongInst::Block(block) => {
+                        let mut blockiter = block.into_iter().peekable();
+                        let flatten = unmatched_flatten(&mut blockiter);
+                        unmatched.push(Inst{cmd: InstType::Open, offset: 0, inc: 0, delta: 0});
+                        unmatched.extend(flatten);
+                        unmatched.push(Inst{cmd: InstType::Close, offset:0, inc: 0, delta: 0});
+                    },
+                }
+            }
+            unmatched
+        }
+
+        let mut iter = prog.into_iter().peekable();
+        let mut flat = unmatched_flatten(&mut iter);
+
+        let mut stack = Vec::new();
+        for idx in 0..flat.len() {
+            match flat[idx].cmd {
+                InstType::Open => {
+                    stack.push(idx);
+                },
+                InstType::Close => {
+                    let open = stack.pop().unwrap();
+                    flat[open].offset = idx as i32;
+                    flat[idx].offset = open as i32;
+                },
+                _ => {},
+            }
+        }
+        flat
+    }
+
+    #[inline(always)]
+    pub fn run_struct(&mut self, prog: Vec<Inst>) {
+        let mut ip = 0;
+        while ip < prog.len() {
+            let Inst{cmd, offset, inc, delta} = prog[ip].clone();
+            match cmd {
+                InstType::ShiftInc => {
+                    self.dp = (self.dp as isize + offset as isize) as usize;
+                    self.memory[self.dp] = self.memory[self.dp].wrapping_add(inc);
+                },
+                InstType::Output => {
+                    print!("{}", self.memory[self.dp] as char);
+                    std::io::stdout().flush().unwrap();
+                    self.memory[self.dp] = self.memory[self.dp].wrapping_add(inc);
+                },
+                InstType::Input => {
+                    let mut buf = [0];
+                    match io::stdin().read_exact(&mut buf) {
+                        Ok(()) => {
+                            self.memory[self.dp] = buf[0];
+                        },
+                        Err(_) => {
+                            self.memory[self.dp] = 0u8;
+                        },
+                    }
+                    self.memory[self.dp] = self.memory[self.dp].wrapping_add(inc);
+                },
+                InstType::Set => {
+                    self.memory[self.dp] = inc;
+                },
+                InstType::Mul => {
+                    if self.memory[self.dp] != 0 {
+                        let val = self.memory[self.dp];
+                        let pos = (self.dp as isize + offset as isize) as usize;
+                        self.memory[pos] = self.memory[pos].wrapping_add(val.wrapping_mul(inc));
+                    }
+                },
+                InstType::Mulzero => {
+                    if self.memory[self.dp] != 0 {
+                        let val = self.memory[self.dp];
+                        let pos = (self.dp as isize + offset as isize) as usize;
+                        self.memory[pos] = self.memory[pos].wrapping_add(val.wrapping_mul(inc));
+                        self.memory[self.dp] = 0;
+                    }
+                },
+                InstType::Skip => {
+                    while self.memory[self.dp] != 0 {
+                        self.dp = (self.dp as isize + offset as isize) as usize;
+                    }
+                    self.memory[self.dp] = self.memory[self.dp].wrapping_add(inc);
+                },
+                InstType::Open => {
+                    if self.memory[self.dp] == 0 {
+                        ip = offset as usize;
+                    }
+                },
+                InstType::Close => {
+                    if self.memory[self.dp] != 0 {
+                        ip = offset as usize;
+                    }
+                },
+            }
+            self.dp = (self.dp as isize + delta as isize) as usize;
+            ip += 1;
+        }
     }
 
     #[inline(always)]

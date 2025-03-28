@@ -1,6 +1,6 @@
 use std::{env, mem};
 mod brainfuck;
-use crate::brainfuck::{Brainfuck, Inst};
+use crate::brainfuck::Brainfuck;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -14,7 +14,9 @@ fn main() {
     prog = Brainfuck::fold_move_loops(prog);
     prog = Brainfuck::fold_skip_loops(prog);
     // println!("{}", Brainfuck::to_c(&prog));
-    let flat = Brainfuck::flatten(prog);
+    let flat = Brainfuck::structify(prog);
+    eprintln!("{}", flat.len());
     let mut bfi = Brainfuck::new();
-    bfi.run(flat);
+    bfi.run_struct(flat);
+    // bfi.run(flat);
 }
