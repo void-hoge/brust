@@ -1,4 +1,4 @@
-use std::io::{self, Read, Write};
+use std::io::{self, Read};
 use std::collections::BTreeMap;
 use std::iter::Peekable;
 
@@ -24,23 +24,6 @@ pub struct Inst {
 }
 
 #[derive(Debug)]
-pub enum InstEnum {
-    Inc(i32),
-    Shift(i32),
-    Output,
-    Input,
-    Reset,
-    Move1(i16),
-    Move2(i16, i16),
-    Move3(i16, i16, i16),
-    Mul(i32, u8),
-    Mulzero(i32, u8),
-    Open(u32),
-    Close(u32),
-    Skip(i32),
-}
-
-#[derive(Debug)]
 pub enum LongInst {
     Inc(i32),
     Shift(i32),
@@ -50,47 +33,6 @@ pub enum LongInst {
     Move(Vec<(i32, i32)>),
     Block(Vec<LongInst>),
     Skip(i32),
-}
-
-impl LongInst {
-    pub fn flatten(&self) -> Vec<InstEnum> {
-        match self {
-            LongInst::Inc(n) => vec![InstEnum::Inc(*n)],
-            LongInst::Shift(n) => vec![InstEnum::Shift(*n)],
-            LongInst::Output => vec![InstEnum::Output],
-            LongInst::Input => vec![InstEnum::Input],
-            LongInst::Reset => vec![InstEnum::Reset],
-            LongInst::Skip(n) => vec![InstEnum::Skip(*n)],
-            LongInst::Move(targets) => {
-                if targets.iter().all(|&(offset, weight)| (weight == 1) && (i16::MIN as i32 <= offset) && (offset <= i16::MAX as i32)) {
-                    if targets.len() == 1 {
-                        return vec![InstEnum::Move1(targets[0].0 as i16)];
-                    } else if targets.len() == 2 {
-                        return vec![InstEnum::Move2(targets[0].0 as i16, targets[1].0 as i16)];
-                    } else if targets.len() == 3 {
-                        return vec![InstEnum::Move3(targets[0].0 as i16, targets[1].0 as i16, targets[2].0 as i16)];
-                    }
-                }
-                let mut flat = Vec::new();
-                if let Some((last, rest)) = targets.split_last() {
-                    for &(offset, weight) in rest {
-                        flat.push(InstEnum::Mul(offset, weight as u8));
-                    }
-                    flat.push(InstEnum::Mulzero(last.0, last.1 as u8));
-                }
-                return flat;
-            },
-            LongInst::Block(block) => {
-                let mut flat = Vec::new();
-                flat.push(InstEnum::Open(0));
-                for inst in block {
-                    flat.extend(inst.flatten());
-                }
-                flat.push(InstEnum::Close(0));
-                flat
-            },
-        }
-    }
 }
 
 pub struct Brainfuck {
@@ -254,34 +196,7 @@ impl Brainfuck {
             .collect()
     }
 
-    pub fn flatten(prog: Vec<LongInst>) -> Vec<InstEnum> {
-        let mut flat = Vec::new();
-        for inst in prog {
-            flat.extend(inst.flatten());
-        }
-
-        let mut result = Vec::new();
-        let mut stack = Vec::new();
-        for inst in flat {
-            match inst {
-                InstEnum::Open(_) => {
-                    stack.push(result.len());
-                    result.push(InstEnum::Open(0));
-                },
-                InstEnum::Close(_) => {
-                    let open = stack.pop().unwrap();
-                    result[open] = InstEnum::Open(result.len() as u32);
-                    result.push(InstEnum::Close(open as u32));
-                },
-                other => {
-                    result.push(other);
-                }
-            }
-        }
-        result
-    }
-
-    pub fn structify(prog: Vec<LongInst>) -> Vec<Inst> {
+    pub fn flatten(prog: Vec<LongInst>) -> Vec<Inst> {
         fn pick_inc<I: Iterator<Item = LongInst>>(iter: &mut Peekable<I>) -> u8 {
             if let Some(LongInst::Inc(value)) = iter.peek() {
                 let value = *value;
@@ -379,7 +294,7 @@ impl Brainfuck {
     }
 
     #[inline(always)]
-    pub fn run_struct(&mut self, prog: Vec<Inst>) {
+    pub fn run(&mut self, prog: Vec<Inst>) {
         let mut ip = 0;
         while ip < prog.len() {
             let Inst{cmd, offset, inc, delta} = &prog[ip];
@@ -440,102 +355,6 @@ impl Brainfuck {
                 },
             }
             self.dp = (self.dp as isize + *delta as isize) as usize;
-            ip += 1;
-        }
-    }
-
-    #[inline(always)]
-    pub fn run(&mut self, prog: Vec<InstEnum>) {
-        let mut ip = 0;
-        while ip < prog.len() {
-            match prog[ip] {
-                InstEnum::Inc(n) => {
-                    self.memory[self.dp] = self.memory[self.dp].wrapping_add(n as u8);
-                },
-                InstEnum::Shift(n) => {
-                    self.dp = (self.dp as i32 + n) as usize;
-                },
-                InstEnum::Output => {
-                    print!("{}", self.memory[self.dp] as char);
-                    std::io::stdout().flush().unwrap();
-                },
-                InstEnum::Input => {
-                    let mut buf = [0];
-                    match io::stdin().read_exact(&mut buf) {
-                        Ok(()) => {
-                            self.memory[self.dp] = buf[0];
-                        },
-                        Err(_) => {
-                            self.memory[self.dp] = 0;
-                        },
-                    }
-                },
-                InstEnum::Reset => {
-                    self.memory[self.dp] = 0;
-                },
-                InstEnum::Move1(offset) => {
-                    if self.memory[self.dp] != 0 {
-                        let val = self.memory[self.dp];
-                        let pos = (self.dp as isize + offset as isize) as usize;
-                        self.memory[pos] = self.memory[pos].wrapping_add(val);
-                        self.memory[self.dp] = 0;
-                    }
-                },
-                InstEnum::Move2(offset0, offset1) => {
-                    if self.memory[self.dp] != 0 {
-                        let val = self.memory[self.dp];
-                        let pos0 = (self.dp as isize + offset0 as isize) as usize;
-                        let pos1 = (self.dp as isize + offset1 as isize) as usize;
-                        self.memory[pos0] = self.memory[pos0].wrapping_add(val);
-                        self.memory[pos1] = self.memory[pos1].wrapping_add(val);
-                        self.memory[self.dp] = 0;
-                    }
-                },
-                InstEnum::Move3(offset0, offset1, offset2) => {
-                    if self.memory[self.dp] != 0 {
-                        let val = self.memory[self.dp];
-                        let pos0 = (self.dp as isize + offset0 as isize) as usize;
-                        let pos1 = (self.dp as isize + offset1 as isize) as usize;
-                        let pos2 = (self.dp as isize + offset2 as isize) as usize;
-                        self.memory[pos0] = self.memory[pos0].wrapping_add(val);
-                        self.memory[pos1] = self.memory[pos1].wrapping_add(val);
-                        self.memory[pos2] = self.memory[pos2].wrapping_add(val);
-                        self.memory[self.dp] = 0;
-                    }
-                },
-                InstEnum::Mul(offset, weight) => {
-                    if self.memory[self.dp] != 0 {
-                        let val = self.memory[self.dp];
-                        let pos = (self.dp as isize + offset as isize) as usize;
-                        let inc = val.wrapping_mul(weight);
-                        self.memory[pos] = self.memory[pos].wrapping_add(inc);
-                    }
-                },
-                InstEnum::Mulzero(offset, weight) => {
-                    if self.memory[self.dp] != 0 {
-                        let val = self.memory[self.dp];
-                        let pos = (self.dp as isize + offset as isize) as usize;
-                        let inc = val.wrapping_mul(weight);
-                        self.memory[pos] = self.memory[pos].wrapping_add(inc);
-                        self.memory[self.dp] = 0;
-                    }
-                },
-                InstEnum::Open(dst) => {
-                    if self.memory[self.dp] == 0 {
-                        ip = dst as usize;
-                    }
-                },
-                InstEnum::Close(dst) => {
-                    if self.memory[self.dp] != 0 {
-                        ip = dst as usize;
-                    }
-                },
-                InstEnum::Skip(n) => {
-                    while self.memory[self.dp] != 0 {
-                        self.dp = (self.dp as i32 + n) as usize;
-                    }
-                },
-            }
             ip += 1;
         }
     }

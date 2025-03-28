@@ -13,8 +13,7 @@ fn main() {
     prog = Brainfuck::fold_reset_loops(prog);
     prog = Brainfuck::fold_move_loops(prog);
     prog = Brainfuck::fold_skip_loops(prog);
-    let flat = Brainfuck::structify(prog);
-
+    let flat = Brainfuck::flatten(prog);
     let mut bfi = Brainfuck::new();
-    bfi.run_struct(flat);
+    bfi.run(flat);
 }
