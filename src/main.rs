@@ -1,6 +1,6 @@
-use std::env;
+use std::{env, mem};
 mod brainfuck;
-use crate::brainfuck::Brainfuck;
+use crate::brainfuck::{Brainfuck, Inst};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
