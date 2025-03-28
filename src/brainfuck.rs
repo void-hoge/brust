@@ -11,8 +11,8 @@ pub enum Inst {
     Move1(i16),
     Move2(i16, i16),
     Move3(i16, i16, i16),
-    Move(u32),
     Mul(i32, u8),
+    Mulzero(i32, u8),
     Open(u32),
     Close(u32),
     Skip(i32),
@@ -48,17 +48,15 @@ impl LongInst {
                     } else if targets.len() == 3 {
                         return vec![Inst::Move3(targets[0].0 as i16, targets[1].0 as i16, targets[2].0 as i16)];
                     }
-                } else {
-                    if targets.len() == 1 {
-                        return vec![Inst::Mul(targets[0].0, targets[0].1 as u8)];
-                    }
                 }
                 let mut flat = Vec::new();
-                flat.push(Inst::Move(targets.len() as u32));
-                for &(offset, weight) in targets {
-                    flat.push(Inst::Mul(offset, weight as u8));
+                if let Some((last, rest)) = targets.split_last() {
+                    for &(offset, weight) in rest {
+                        flat.push(Inst::Mul(offset, weight as u8));
+                    }
+                    flat.push(Inst::Mulzero(last.0, last.1 as u8));
                 }
-                flat
+                return flat;
             },
             LongInst::Block(block) => {
                 let mut flat = Vec::new();
@@ -181,7 +179,7 @@ impl Brainfuck {
         prog
             .into_iter()
             .map(|inst| {
-                match inst  {
+                match inst {
                     LongInst::Block(block) => {
                         let folded = Brainfuck::fold_move_loops(block);
                         if folded.iter().all(|x| matches!(x, LongInst::Inc(_) | LongInst::Shift(_))) {
@@ -334,23 +332,18 @@ impl Brainfuck {
                         let pos = (self.dp as isize + offset as isize) as usize;
                         let inc = val.wrapping_mul(weight);
                         self.memory[pos] = self.memory[pos].wrapping_add(inc);
+                    }
+                    ip += 1;
+                },
+                Inst::Mulzero(offset, weight) => {
+                    if self.memory[self.dp] != 0 {
+                        let val = self.memory[self.dp];
+                        let pos = (self.dp as isize + offset as isize) as usize;
+                        let inc = val.wrapping_mul(weight);
+                        self.memory[pos] = self.memory[pos].wrapping_add(inc);
                         self.memory[self.dp] = 0;
                     }
                     ip += 1;
-                }
-                Inst::Move(len) => {
-                    if self.memory[self.dp] != 0 {
-                        let val = self.memory[self.dp];
-                        for idx in 0..len as usize {
-                            if let Inst::Mul(offset, weight) = prog[ip + idx + 1] {
-                                let pos = (self.dp as isize + offset as isize) as usize;
-                                let inc = val.wrapping_mul(weight);
-                                self.memory[pos] = self.memory[pos].wrapping_add(inc);
-                            }
-                        }
-                        self.memory[self.dp] = 0;
-                    }
-                    ip += len as usize + 1;
                 },
                 Inst::Open(dst) => {
                     if self.memory[self.dp] == 0 {
