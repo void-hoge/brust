@@ -390,7 +390,6 @@ impl Brainfuck {
                 },
                 InstType::Output => {
                     print!("{}", self.memory[self.dp] as char);
-                    std::io::stdout().flush().unwrap();
                     self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
                 },
                 InstType::Input => {
@@ -539,71 +538,5 @@ impl Brainfuck {
             }
             ip += 1;
         }
-    }
-
-    pub fn to_c(prog: &Vec<LongInst>) -> String {
-        fn block_to_c(prog: &Vec<LongInst>, level: usize) -> String {
-            let mut code = String::new();
-            fn indent(level: usize) -> String {
-                "    ".repeat(level)
-            }
-            for inst in prog {
-                match inst {
-                    LongInst::Inc(n) => {
-                        code.push_str(&format!("{}memory[dp] += {};\n", indent(level), n));
-                    },
-                    LongInst::Shift(n) => {
-                        code.push_str(&format!("{}dp += {};\n", indent(level), n));
-                    },
-                    LongInst::Output => {
-                        code.push_str(&format!("{}putchar(memory[dp]);\n", indent(level)));
-                    },
-                    LongInst::Input => {
-                        code.push_str(&format!("{}memory[dp] = getchar();\n", indent(level)));
-                    },
-                    LongInst::Reset => {
-                        code.push_str(&format!("{}memory[dp] = 0;\n", indent(level)));
-                    },
-                    LongInst::Move(targets) => {
-                        code.push_str(&format!("{}if (memory[dp]) {{\n", indent(level)));
-                        for &(offset, weight) in targets {
-                            if weight == 1 {
-                                code.push_str(&format!(
-                                    "{}memory[dp + {}] += memory[dp];\n",
-                                    indent(level + 1), offset
-                                ));
-                            } else {
-                                code.push_str(&format!(
-                                    "{}memory[dp + {}] += memory[dp] * {};\n",
-                                    indent(level + 1), offset, weight
-                                ));
-                            }
-                        }
-                        code.push_str(&format!("{}memory[dp] = 0;\n", indent(level)));
-                        code.push_str(&format!("{}}}\n", indent(level)));
-                    },
-                    LongInst::Skip(n) => {
-                        code.push_str(&format!("{}while (memory[dp]) dp += {};\n", indent(level), n))
-                    },
-                    LongInst::Block(block) => {
-                        code.push_str(&format!("{}while (memory[dp]) {{\n", indent(level)));
-                        code.push_str(&block_to_c(block, level + 1));
-                        code.push_str(&format!("{}}}\n", indent(level)));
-                    },
-                }
-            }
-            code
-        }
-        
-        let mut code = String::new();
-        code.push_str("#include <stdio.h>\n");
-        code.push_str("#include <stdlib.h>\n");
-        code.push_str("int main() {\n");
-        code.push_str("    char memory[(1<<16)] = {};\n");
-        code.push_str("    int dp = 0;\n");
-        code.push_str(&block_to_c(prog, 1));
-        code.push_str("    return 0;\n");
-        code.push_str("}\n");
-        code
     }
 }

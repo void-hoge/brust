@@ -3,7 +3,9 @@ name = "brust"
 version = "0.1.0"
 edition = "2021"
 
-[dependencies]
-
-[build]
-rustflags = ["-C", "target-cpu=native"]
+[profile.release]
+codegen-units = 1
+overflow-checks = false
+panic = "abort"
+lto = true
+debug = false

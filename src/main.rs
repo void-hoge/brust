@@ -1,4 +1,4 @@
-use std::{env, mem};
+use std::env;
 mod brainfuck;
 use crate::brainfuck::Brainfuck;
 
@@ -13,10 +13,8 @@ fn main() {
     prog = Brainfuck::fold_reset_loops(prog);
     prog = Brainfuck::fold_move_loops(prog);
     prog = Brainfuck::fold_skip_loops(prog);
-    // println!("{}", Brainfuck::to_c(&prog));
     let flat = Brainfuck::structify(prog);
-    eprintln!("{}", flat.len());
+
     let mut bfi = Brainfuck::new();
     bfi.run_struct(flat);
-    // bfi.run(flat);
 }
