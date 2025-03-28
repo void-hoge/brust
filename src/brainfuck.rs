@@ -268,8 +268,8 @@ impl Brainfuck {
                 },
                 InstEnum::Close(_) => {
                     let open = stack.pop().unwrap();
-                    result[open] = InstEnum::Open(result.len() as u32 + 1);
-                    result.push(InstEnum::Close(open as u32 + 1));
+                    result[open] = InstEnum::Open(result.len() as u32);
+                    result.push(InstEnum::Close(open as u32));
                 },
                 other => {
                     result.push(other);
@@ -286,16 +286,13 @@ impl Brainfuck {
             match prog[ip] {
                 InstEnum::Inc(n) => {
                     self.memory[self.dp] = self.memory[self.dp].wrapping_add(n as u8);
-                    ip += 1;
                 },
                 InstEnum::Shift(n) => {
                     self.dp = (self.dp as i32 + n) as usize;
-                    ip += 1;
                 },
                 InstEnum::Output => {
                     print!("{}", self.memory[self.dp] as char);
                     std::io::stdout().flush().unwrap();
-                    ip += 1;
                 },
                 InstEnum::Input => {
                     let mut buf = [0];
@@ -307,11 +304,9 @@ impl Brainfuck {
                             self.memory[self.dp] = 0;
                         },
                     }
-                    ip += 1;
                 },
                 InstEnum::Reset => {
                     self.memory[self.dp] = 0;
-                    ip += 1;
                 },
                 InstEnum::Move1(offset) => {
                     if self.memory[self.dp] != 0 {
@@ -320,7 +315,6 @@ impl Brainfuck {
                         self.memory[pos] = self.memory[pos].wrapping_add(val);
                         self.memory[self.dp] = 0;
                     }
-                    ip += 1;
                 },
                 InstEnum::Move2(offset0, offset1) => {
                     if self.memory[self.dp] != 0 {
@@ -331,7 +325,6 @@ impl Brainfuck {
                         self.memory[pos1] = self.memory[pos1].wrapping_add(val);
                         self.memory[self.dp] = 0;
                     }
-                    ip += 1;
                 },
                 InstEnum::Move3(offset0, offset1, offset2) => {
                     if self.memory[self.dp] != 0 {
@@ -344,7 +337,6 @@ impl Brainfuck {
                         self.memory[pos2] = self.memory[pos2].wrapping_add(val);
                         self.memory[self.dp] = 0;
                     }
-                    ip += 1;
                 },
                 InstEnum::Mul(offset, weight) => {
                     if self.memory[self.dp] != 0 {
@@ -353,7 +345,6 @@ impl Brainfuck {
                         let inc = val.wrapping_mul(weight);
                         self.memory[pos] = self.memory[pos].wrapping_add(inc);
                     }
-                    ip += 1;
                 },
                 InstEnum::Mulzero(offset, weight) => {
                     if self.memory[self.dp] != 0 {
@@ -363,29 +354,24 @@ impl Brainfuck {
                         self.memory[pos] = self.memory[pos].wrapping_add(inc);
                         self.memory[self.dp] = 0;
                     }
-                    ip += 1;
                 },
                 InstEnum::Open(dst) => {
                     if self.memory[self.dp] == 0 {
                         ip = dst as usize;
-                    } else {
-                        ip += 1;
                     }
                 },
                 InstEnum::Close(dst) => {
                     if self.memory[self.dp] != 0 {
                         ip = dst as usize;
-                    } else {
-                        ip += 1;
                     }
                 },
                 InstEnum::Skip(n) => {
                     while self.memory[self.dp] != 0 {
                         self.dp = (self.dp as i32 + n) as usize;
                     }
-                    ip += 1;
                 },
             }
+            ip += 1;
         }
     }
 
