@@ -2,7 +2,7 @@ use std::io::{self, Read, Write};
 use std::collections::BTreeMap;
 use std::iter::Peekable;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 pub enum InstType {
     ShiftInc,
     Output,
@@ -15,7 +15,7 @@ pub enum InstType {
     Skip,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Inst {
     cmd: InstType,
     offset: i32,
@@ -382,16 +382,16 @@ impl Brainfuck {
     pub fn run_struct(&mut self, prog: Vec<Inst>) {
         let mut ip = 0;
         while ip < prog.len() {
-            let Inst{cmd, offset, inc, delta} = prog[ip].clone();
+            let Inst{cmd, offset, inc, delta} = &prog[ip];
             match cmd {
                 InstType::ShiftInc => {
-                    self.dp = (self.dp as isize + offset as isize) as usize;
-                    self.memory[self.dp] = self.memory[self.dp].wrapping_add(inc);
+                    self.dp = (self.dp as isize + *offset as isize) as usize;
+                    self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
                 },
                 InstType::Output => {
                     print!("{}", self.memory[self.dp] as char);
                     std::io::stdout().flush().unwrap();
-                    self.memory[self.dp] = self.memory[self.dp].wrapping_add(inc);
+                    self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
                 },
                 InstType::Input => {
                     let mut buf = [0];
@@ -403,44 +403,44 @@ impl Brainfuck {
                             self.memory[self.dp] = 0u8;
                         },
                     }
-                    self.memory[self.dp] = self.memory[self.dp].wrapping_add(inc);
+                    self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
                 },
                 InstType::Set => {
-                    self.memory[self.dp] = inc;
+                    self.memory[self.dp] = *inc;
                 },
                 InstType::Mul => {
                     if self.memory[self.dp] != 0 {
                         let val = self.memory[self.dp];
-                        let pos = (self.dp as isize + offset as isize) as usize;
-                        self.memory[pos] = self.memory[pos].wrapping_add(val.wrapping_mul(inc));
+                        let pos = (self.dp as isize + *offset as isize) as usize;
+                        self.memory[pos] = self.memory[pos].wrapping_add(val.wrapping_mul(*inc));
                     }
                 },
                 InstType::Mulzero => {
                     if self.memory[self.dp] != 0 {
                         let val = self.memory[self.dp];
-                        let pos = (self.dp as isize + offset as isize) as usize;
-                        self.memory[pos] = self.memory[pos].wrapping_add(val.wrapping_mul(inc));
+                        let pos = (self.dp as isize + *offset as isize) as usize;
+                        self.memory[pos] = self.memory[pos].wrapping_add(val.wrapping_mul(*inc));
                         self.memory[self.dp] = 0;
                     }
                 },
                 InstType::Skip => {
                     while self.memory[self.dp] != 0 {
-                        self.dp = (self.dp as isize + offset as isize) as usize;
+                        self.dp = (self.dp as isize + *offset as isize) as usize;
                     }
-                    self.memory[self.dp] = self.memory[self.dp].wrapping_add(inc);
+                    self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
                 },
                 InstType::Open => {
                     if self.memory[self.dp] == 0 {
-                        ip = offset as usize;
+                        ip = *offset as usize;
                     }
                 },
                 InstType::Close => {
                     if self.memory[self.dp] != 0 {
-                        ip = offset as usize;
+                        ip = *offset as usize;
                     }
                 },
             }
-            self.dp = (self.dp as isize + delta as isize) as usize;
+            self.dp = (self.dp as isize + *delta as isize) as usize;
             ip += 1;
         }
     }
