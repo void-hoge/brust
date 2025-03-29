@@ -1,13 +1,13 @@
-# bench    bf-eval deadbeef brust
-awib       0.0995  0.0700   0.0230
-Collatz    3.47    2.49     2.13
-Counter    5.57    2.74     2.98
-EasyOpt    3.34    2.85     0.0363
-Factor     5.45    5.22     3.73
-Hanoi      0.256   0.236    0.152
-Life       1.94    1.16     0.0124
-Long       3.46    1.61     0.712
-Mandelbrot 2.54    2.16     2.07
-Prime      7.01    3.81     1.69
-SelfInt    3.41    2.31     2.49
-Sudoku     2.27    4.21     0.976
+# bench    bf-eval  deadbeef  brust
+awib       0.0995   0.0700    0.0222
+Collatz    3.47     2.49      1.94  
+Counter    5.57     2.74      2.68  
+EasyOpt    3.34     2.85      0.0341
+Factor     5.45     5.22      2.45  
+Hanoi      0.256    0.236     0.132 
+Life       1.94     1.16      0.0123
+Long       3.46     1.61      0.859 
+Mandelbrot 2.54     2.16      1.74  
+Prime      7.01     3.81      1.48  
+SelfInt    3.41     2.31      2.05  
+Sudoku     2.27     4.21      0.858 
