@@ -7,12 +7,12 @@ pub enum InstType {
     ShiftInc,
     Output,
     Input,
+    Skip,
     Set,
-    Mul,
     Mulzero,
+    Mul,
     Open,
     Close,
-    Skip,
 }
 
 #[derive(Debug)]
@@ -36,6 +36,7 @@ pub enum LongInst {
 }
 
 pub struct Brainfuck {
+    ip: usize,
     dp: usize,
     memory: Vec<u8>,
 }
@@ -43,9 +44,10 @@ pub struct Brainfuck {
 #[allow(dead_code)]
 impl Brainfuck {
     pub fn new() -> Self {
-        Self { 
-           dp: 0,
-           memory: vec![0u8; 1<<16],
+        Self {
+            ip: 0,
+            dp: 0,
+            memory: vec![0u8; 1<<16],
         }
     }
 
@@ -295,9 +297,8 @@ impl Brainfuck {
 
     #[inline(always)]
     pub fn run(&mut self, prog: Vec<Inst>) {
-        let mut ip = 0;
-        while ip < prog.len() {
-            let Inst{cmd, offset, inc, delta} = &prog[ip];
+        while self.ip < prog.len() {
+            let Inst{cmd, offset, inc, delta} = &prog[self.ip];
             match cmd {
                 InstType::ShiftInc => {
                     self.dp = (self.dp as isize + *offset as isize) as usize;
@@ -319,15 +320,14 @@ impl Brainfuck {
                     }
                     self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
                 },
+                InstType::Skip => {
+                    while self.memory[self.dp] != 0 {
+                        self.dp = (self.dp as isize + *offset as isize) as usize;
+                    }
+                    self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
+                },
                 InstType::Set => {
                     self.memory[self.dp] = *inc;
-                },
-                InstType::Mul => {
-                    if self.memory[self.dp] != 0 {
-                        let val = self.memory[self.dp];
-                        let pos = (self.dp as isize + *offset as isize) as usize;
-                        self.memory[pos] = self.memory[pos].wrapping_add(val.wrapping_mul(*inc));
-                    }
                 },
                 InstType::Mulzero => {
                     if self.memory[self.dp] != 0 {
@@ -337,25 +337,26 @@ impl Brainfuck {
                         self.memory[self.dp] = 0;
                     }
                 },
-                InstType::Skip => {
-                    while self.memory[self.dp] != 0 {
-                        self.dp = (self.dp as isize + *offset as isize) as usize;
+                InstType::Mul => {
+                    if self.memory[self.dp] != 0 {
+                        let val = self.memory[self.dp];
+                        let pos = (self.dp as isize + *offset as isize) as usize;
+                        self.memory[pos] = self.memory[pos].wrapping_add(val.wrapping_mul(*inc));
                     }
-                    self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
                 },
                 InstType::Open => {
                     if self.memory[self.dp] == 0 {
-                        ip = *offset as usize;
+                        self.ip = *offset as usize;
                     }
                 },
                 InstType::Close => {
                     if self.memory[self.dp] != 0 {
-                        ip = *offset as usize;
+                        self.ip = *offset as usize;
                     }
                 },
             }
             self.dp = (self.dp as isize + *delta as isize) as usize;
-            ip += 1;
+            self.ip += 1;
         }
     }
 }
