@@ -307,21 +307,6 @@ impl Brainfuck {
                     self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
                     self.dp = (self.dp as isize + *delta as isize) as usize;
                 },
-                InstType::Open => {
-                    if self.memory[self.dp] == 0 {
-                        self.ip = *offset as usize;
-                    } else {
-                        self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
-                        self.dp = (self.dp as isize + *delta as isize) as usize;
-                    }
-                },
-                InstType::Close => {
-                    if self.memory[self.dp] != 0 {
-                        self.ip = *offset as usize;
-                        self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
-                        self.dp = (self.dp as isize + *delta as isize) as usize;
-                    }
-                },
                 InstType::Output => {
                     print!("{}", self.memory[self.dp] as char);
                     self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
@@ -367,6 +352,21 @@ impl Brainfuck {
                         self.memory[pos] = self.memory[pos].wrapping_add(val.wrapping_mul(*inc));
                     }
                     self.dp = (self.dp as isize + *delta as isize) as usize;
+                },
+                InstType::Open => {
+                    if self.memory[self.dp] == 0 {
+                        self.ip = *offset as usize;
+                    } else {
+                        self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
+                        self.dp = (self.dp as isize + *delta as isize) as usize;
+                    }
+                },
+                InstType::Close => {
+                    if self.memory[self.dp] != 0 {
+                        self.ip = *offset as usize;
+                        self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
+                        self.dp = (self.dp as isize + *delta as isize) as usize;
+                    }
                 },
             }
             self.ip += 1;
