@@ -265,10 +265,12 @@ impl Brainfuck {
                     },
                     LongInst::Block(block) => {
                         let mut blockiter = block.into_iter().peekable();
+                        let inc = pick_inc(&mut blockiter);
+                        let delta = pick_shift(&mut blockiter);
                         let flatten = unmatched_flatten(&mut blockiter);
-                        unmatched.push(Inst{cmd: InstType::Open, offset: 0, inc: 0, delta: 0});
+                        unmatched.push(Inst{cmd: InstType::Open, offset: 0, inc: inc, delta: delta});
                         unmatched.extend(flatten);
-                        unmatched.push(Inst{cmd: InstType::Close, offset:0, inc: 0, delta: 0});
+                        unmatched.push(Inst{cmd: InstType::Close, offset:0, inc: inc, delta: delta});
                     },
                 }
             }
@@ -303,10 +305,27 @@ impl Brainfuck {
                 InstType::ShiftInc => {
                     self.dp = (self.dp as isize + *offset as isize) as usize;
                     self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
+                    self.dp = (self.dp as isize + *delta as isize) as usize;
+                },
+                InstType::Open => {
+                    if self.memory[self.dp] == 0 {
+                        self.ip = *offset as usize;
+                    } else {
+                        self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
+                        self.dp = (self.dp as isize + *delta as isize) as usize;
+                    }
+                },
+                InstType::Close => {
+                    if self.memory[self.dp] != 0 {
+                        self.ip = *offset as usize;
+                        self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
+                        self.dp = (self.dp as isize + *delta as isize) as usize;
+                    }
                 },
                 InstType::Output => {
                     print!("{}", self.memory[self.dp] as char);
                     self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
+                    self.dp = (self.dp as isize + *delta as isize) as usize;
                 },
                 InstType::Input => {
                     let mut buf = [0];
@@ -319,15 +338,18 @@ impl Brainfuck {
                         },
                     }
                     self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
+                    self.dp = (self.dp as isize + *delta as isize) as usize;
                 },
                 InstType::Skip => {
                     while self.memory[self.dp] != 0 {
                         self.dp = (self.dp as isize + *offset as isize) as usize;
                     }
                     self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
+                    self.dp = (self.dp as isize + *delta as isize) as usize;
                 },
                 InstType::Set => {
                     self.memory[self.dp] = *inc;
+                    self.dp = (self.dp as isize + *delta as isize) as usize;
                 },
                 InstType::Mulzero => {
                     if self.memory[self.dp] != 0 {
@@ -336,6 +358,7 @@ impl Brainfuck {
                         self.memory[pos] = self.memory[pos].wrapping_add(val.wrapping_mul(*inc));
                         self.memory[self.dp] = 0;
                     }
+                    self.dp = (self.dp as isize + *delta as isize) as usize;
                 },
                 InstType::Mul => {
                     if self.memory[self.dp] != 0 {
@@ -343,19 +366,9 @@ impl Brainfuck {
                         let pos = (self.dp as isize + *offset as isize) as usize;
                         self.memory[pos] = self.memory[pos].wrapping_add(val.wrapping_mul(*inc));
                     }
-                },
-                InstType::Open => {
-                    if self.memory[self.dp] == 0 {
-                        self.ip = *offset as usize;
-                    }
-                },
-                InstType::Close => {
-                    if self.memory[self.dp] != 0 {
-                        self.ip = *offset as usize;
-                    }
+                    self.dp = (self.dp as isize + *delta as isize) as usize;
                 },
             }
-            self.dp = (self.dp as isize + *delta as isize) as usize;
             self.ip += 1;
         }
     }
