@@ -18,7 +18,7 @@ pub enum InstType {
 #[derive(Debug)]
 pub struct Inst {
     cmd: InstType,
-    offset: i32,
+    arg: i32,
     inc: u8,
     delta: i16,
 }
@@ -149,25 +149,25 @@ impl Brainfuck {
                     LongInst::Block(block) => {
                         let folded = Brainfuck::fold_move_loops(block);
                         if folded.iter().all(|x| matches!(x, LongInst::Inc(_) | LongInst::Shift(_))) {
-                            let mut offset: i32 = 0;
+                            let mut arg: i32 = 0;
                             let mut changes: BTreeMap<i32, i32> = BTreeMap::new();
                             changes.insert(0, 0);
                             for ins in &folded {
                                 match ins {
                                     LongInst::Inc(n) => {
-                                        let entry = changes.entry(offset).or_insert(0);
+                                        let entry = changes.entry(arg).or_insert(0);
                                         *entry += *n;
                                     },
                                     LongInst::Shift(n) => {
-                                        offset += *n;
+                                        arg += *n;
                                     },
                                     _ => {}
                                 }
                             }
-                            if offset == 0 {
+                            if arg == 0 {
                                 if let Some(-1) = changes.get(&0) {
                                     let payload: Vec<(i32, i32)> = changes.into_iter()
-                                        .filter(|&(offset, weight)| offset != 0 && weight != 0)
+                                        .filter(|&(arg, weight)| arg != 0 && weight != 0)
                                         .collect();
                                     return LongInst::Move(payload);
                                 }
@@ -224,53 +224,53 @@ impl Brainfuck {
                     LongInst::Inc(inc) => {
                         let inc = inc as u8;
                         let delta = pick_shift(iter);
-                        unmatched.push(Inst{cmd: InstType::ShiftInc, offset: 0, inc: inc, delta: delta});
+                        unmatched.push(Inst{cmd: InstType::ShiftInc, arg: 0, inc: inc, delta: delta});
                     },
                     LongInst::Shift(amount) => {
                         let amount = amount;
                         let inc = pick_inc(iter);
                         let delta = pick_shift(iter);
-                        unmatched.push(Inst{cmd: InstType::ShiftInc, offset: amount, inc: inc, delta: delta});
+                        unmatched.push(Inst{cmd: InstType::ShiftInc, arg: amount, inc: inc, delta: delta});
                     },
                     LongInst::Output => {
                         let inc = pick_inc(iter);
                         let delta = pick_shift(iter);
-                        unmatched.push(Inst{cmd: InstType::Output, offset: 0, inc: inc, delta: delta});
+                        unmatched.push(Inst{cmd: InstType::Output, arg: 0, inc: inc, delta: delta});
                     },
                     LongInst::Input => {
                         let inc = pick_inc(iter);
                         let delta = pick_shift(iter);
-                        unmatched.push(Inst{cmd: InstType::Input, offset: 0, inc: inc, delta: delta});
+                        unmatched.push(Inst{cmd: InstType::Input, arg: 0, inc: inc, delta: delta});
                     },
                     LongInst::Reset => {
                         let inc = pick_inc(iter);
                         let delta = pick_shift(iter);
-                        unmatched.push(Inst{cmd: InstType::Set, offset: 0, inc: inc, delta: delta});
+                        unmatched.push(Inst{cmd: InstType::Set, arg: 0, inc: inc, delta: delta});
                     },
                     LongInst::Move(targets) => {
                         let delta = pick_shift(iter);
                         if let Some((last, rest)) = targets.split_last() {
-                            for &(offset, weight) in rest {
-                                unmatched.push(Inst{cmd: InstType::Mul, offset: offset, inc: weight as u8, delta: 0});
+                            for &(arg, weight) in rest {
+                                unmatched.push(Inst{cmd: InstType::Mul, arg: arg, inc: weight as u8, delta: 0});
                             }
-                            unmatched.push(Inst{cmd: InstType::Mulzero, offset: last.0, inc: last.1 as u8, delta: delta});
+                            unmatched.push(Inst{cmd: InstType::Mulzero, arg: last.0, inc: last.1 as u8, delta: delta});
                         } else {
                             unreachable!("Num of targets of move must at least one.");
                         }
                     },
-                    LongInst::Skip(offset) => {
+                    LongInst::Skip(arg) => {
                         let inc = pick_inc(iter);
                         let delta = pick_shift(iter);
-                        unmatched.push(Inst{cmd: InstType::Skip, offset: offset, inc: inc, delta: delta});
+                        unmatched.push(Inst{cmd: InstType::Skip, arg: arg, inc: inc, delta: delta});
                     },
                     LongInst::Block(block) => {
                         let mut blockiter = block.into_iter().peekable();
                         let inc = pick_inc(&mut blockiter);
                         let delta = pick_shift(&mut blockiter);
                         let flatten = unmatched_flatten(&mut blockiter);
-                        unmatched.push(Inst{cmd: InstType::Open, offset: 0, inc: inc, delta: delta});
+                        unmatched.push(Inst{cmd: InstType::Open, arg: 0, inc: inc, delta: delta});
                         unmatched.extend(flatten);
-                        unmatched.push(Inst{cmd: InstType::Close, offset:0, inc: inc, delta: delta});
+                        unmatched.push(Inst{cmd: InstType::Close, arg:0, inc: inc, delta: delta});
                     },
                 }
             }
@@ -288,8 +288,8 @@ impl Brainfuck {
                 },
                 InstType::Close => {
                     let open = stack.pop().unwrap();
-                    flat[open].offset = idx as i32;
-                    flat[idx].offset = open as i32;
+                    flat[open].arg = idx as i32;
+                    flat[idx].arg = open as i32;
                 },
                 _ => {},
             }
@@ -300,9 +300,9 @@ impl Brainfuck {
     #[inline(always)]
     pub fn run(&mut self, prog: Vec<Inst>) {
         while self.ip < prog.len() {
-            let Inst{cmd, offset, inc, delta} = &prog[self.ip];
+            let Inst{cmd, arg, inc, delta} = &prog[self.ip];
             if *cmd == InstType::ShiftInc {
-                self.dp = (self.dp as isize + *offset as isize) as usize;
+                self.dp = (self.dp as isize + *arg as isize) as usize;
                 self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
                 self.dp = (self.dp as isize + *delta as isize) as usize;
             } else if *cmd == InstType::Output {
@@ -323,7 +323,7 @@ impl Brainfuck {
                 self.dp = (self.dp as isize + *delta as isize) as usize;
             } else if *cmd == InstType::Skip {
                 while self.memory[self.dp] != 0 {
-                    self.dp = (self.dp as isize + *offset as isize) as usize;
+                    self.dp = (self.dp as isize + *arg as isize) as usize;
                 }
                 self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
                 self.dp = (self.dp as isize + *delta as isize) as usize;
@@ -333,7 +333,7 @@ impl Brainfuck {
             } else if *cmd == InstType::Mulzero {
                 if self.memory[self.dp] != 0 {
                     let val = self.memory[self.dp];
-                    let pos = (self.dp as isize + *offset as isize) as usize;
+                    let pos = (self.dp as isize + *arg as isize) as usize;
                     self.memory[pos] = self.memory[pos].wrapping_add(val.wrapping_mul(*inc));
                     self.memory[self.dp] = 0;
                 }
@@ -341,20 +341,20 @@ impl Brainfuck {
             } else if *cmd == InstType::Mul {
                 if self.memory[self.dp] != 0 {
                     let val = self.memory[self.dp];
-                    let pos = (self.dp as isize + *offset as isize) as usize;
+                    let pos = (self.dp as isize + *arg as isize) as usize;
                     self.memory[pos] = self.memory[pos].wrapping_add(val.wrapping_mul(*inc));
                 }
                 self.dp = (self.dp as isize + *delta as isize) as usize;
             } else if *cmd == InstType::Open {
                 if self.memory[self.dp] == 0 {
-                    self.ip = *offset as usize;
+                    self.ip = *arg as usize;
                 } else {
                     self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
                     self.dp = (self.dp as isize + *delta as isize) as usize;
                 }
             } else /* if *cmd == InstType::Close */ {
                 if self.memory[self.dp] != 0 {
-                    self.ip = *offset as usize;
+                    self.ip = *arg as usize;
                     self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
                     self.dp = (self.dp as isize + *delta as isize) as usize;
                 }
