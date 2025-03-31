@@ -4,8 +4,4 @@ version = "0.1.0"
 edition = "2021"
 
 [profile.release]
-codegen-units = 1
-overflow-checks = false
 panic = "abort"
-lto = true
-debug = false
