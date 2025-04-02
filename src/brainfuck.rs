@@ -344,6 +344,7 @@ impl Brainfuck {
                     let pos = (self.dp as isize + *arg as isize) as usize;
                     self.memory[pos] = self.memory[pos].wrapping_add(val.wrapping_mul(*inc));
                 }
+                // Because intended to be used only in the [->+<] idiom, delta is always 0 (so the next line will always ignored).
                 self.dp = (self.dp as isize + *delta as isize) as usize;
             } else if *cmd == InstType::Open {
                 if self.memory[self.dp] == 0 {
