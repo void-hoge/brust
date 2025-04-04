@@ -1,5 +1,5 @@
 # BRUST
-A fast Brainfuck interpreter by 
+A fast Brainfuck interpreter in Rust
 
 ## Build
 ```shellsession
