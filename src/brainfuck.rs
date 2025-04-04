@@ -1,4 +1,4 @@
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::collections::BTreeMap;
 use std::iter::Peekable;
 
@@ -43,11 +43,11 @@ pub struct Brainfuck {
 
 #[allow(dead_code)]
 impl Brainfuck {
-    pub fn new() -> Self {
+    pub fn new(length: usize) -> Self {
         Self {
             ip: 0,
             dp: 0,
-            memory: vec![0u8; 1<<16],
+            memory: vec![0u8; length],
         }
     }
 
@@ -298,7 +298,7 @@ impl Brainfuck {
     }
 
     #[inline(always)]
-    pub fn run(&mut self, prog: Vec<Inst>) {
+    pub fn run<const FLUSH: bool>(&mut self, prog: Vec<Inst>) {
         while self.ip < prog.len() {
             let Inst{cmd, arg, inc, delta} = &prog[self.ip];
             if *cmd == InstType::ShiftInc {
@@ -309,6 +309,9 @@ impl Brainfuck {
                 print!("{}", self.memory[self.dp] as char);
                 self.memory[self.dp] = self.memory[self.dp].wrapping_add(*inc);
                 self.dp = (self.dp as isize + *delta as isize) as usize;
+                if FLUSH {
+                    io::stdout().flush().unwrap();
+                }
             } else if *cmd == InstType::Input {
                 let mut buf = [0];
                 match io::stdin().read_exact(&mut buf) {

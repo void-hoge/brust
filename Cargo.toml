@@ -3,5 +3,5 @@ name = "brust"
 version = "0.1.0"
 edition = "2021"
 
-[profile.release]
-panic = "abort"
+[dependencies]
+clap = {version = "4.5.35", features = ["derive"]}
