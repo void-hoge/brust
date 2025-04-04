@@ -4,7 +4,7 @@ use crate::brainfuck::Brainfuck;
 
 #[derive(Parser, Debug)]
 #[command(name = "brust")]
-#[command(about = "Brainfuck interpreter written in Rust")]
+#[command(about = "Brainfuck interpreter")]
 struct Args {
     #[arg(short, long, default_value_t = 65536)]
     length: usize,
