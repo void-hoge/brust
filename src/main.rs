@@ -22,6 +22,7 @@ fn main() {
     let mut prog = Brainfuck::parse(&code);
     prog = Brainfuck::compress(prog);
     prog = Brainfuck::fold_reset_loops(prog);
+    prog = Brainfuck::fold_set_idioms(prog);
     prog = Brainfuck::fold_move_loops(prog);
     prog = Brainfuck::fold_skip_loops(prog);
     let flat = Brainfuck::flatten(prog);
