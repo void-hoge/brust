@@ -24,14 +24,14 @@ pub struct Inst {
 }
 
 #[derive(Debug)]
-pub enum LongInst {
+pub enum IR {
     Inc(i32),
     Shift(i32),
     Output,
     Input,
     Reset,
     Move(Vec<(i32, i32)>),
-    Block(Vec<LongInst>),
+    Block(Vec<IR>),
     Skip(i32),
 }
 
@@ -51,20 +51,20 @@ impl Brainfuck {
         }
     }
 
-    pub fn parse(code: &str) -> Vec<LongInst> {
-        fn parse_block<I: Iterator<Item = char>>(iter: &mut I, in_block: bool) -> Result<Vec<LongInst>, String> {
+    pub fn parse(code: &str) -> Vec<IR> {
+        fn parse_block<I: Iterator<Item = char>>(iter: &mut I, in_block: bool) -> Result<Vec<IR>, String> {
             let mut prog = Vec::new();
             while let Some(ch) = iter.next() {
                 match ch {
-                    '+' => prog.push(LongInst::Inc(1)),
-                    '-' => prog.push(LongInst::Inc(-1)),
-                    '>' => prog.push(LongInst::Shift(1)),
-                    '<' => prog.push(LongInst::Shift(-1)),
-                    '.' => prog.push(LongInst::Output),
-                    ',' => prog.push(LongInst::Input),
+                    '+' => prog.push(IR::Inc(1)),
+                    '-' => prog.push(IR::Inc(-1)),
+                    '>' => prog.push(IR::Shift(1)),
+                    '<' => prog.push(IR::Shift(-1)),
+                    '.' => prog.push(IR::Output),
+                    ',' => prog.push(IR::Input),
                     '[' => {
                         let block = parse_block(iter, true)?;
-                        prog.push(LongInst::Block(block));
+                        prog.push(IR::Block(block));
                     },
                     ']' => {
                         if in_block {
@@ -85,34 +85,34 @@ impl Brainfuck {
         parse_block(&mut code.chars(), false).unwrap()
     }
 
-    pub fn compress(prog: Vec<LongInst>) -> Vec<LongInst> {
+    pub fn compress(prog: Vec<IR>) -> Vec<IR> {
         let mut compressed = Vec::new();
         let mut iter = prog.into_iter().peekable();
         while let Some(inst) = iter.next() {
             match inst {
-                LongInst::Inc(n) => {
+                IR::Inc(n) => {
                     let mut count = n;
-                    while let Some(LongInst::Inc(m)) = iter.peek() {
+                    while let Some(IR::Inc(m)) = iter.peek() {
                         count += m;
                         iter.next();
                     }
                     if count != 0 {
-                        compressed.push(LongInst::Inc(count));
+                        compressed.push(IR::Inc(count));
                     }
                 },
-                LongInst::Shift(n) => {
+                IR::Shift(n) => {
                     let mut count = n;
-                    while let Some(LongInst::Shift(m)) = iter.peek() {
+                    while let Some(IR::Shift(m)) = iter.peek() {
                         count += m;
                         iter.next();
                     }
                     if count != 0 {
-                        compressed.push(LongInst::Shift(count));
+                        compressed.push(IR::Shift(count));
                     }
                 },
-                LongInst::Block(block) => {
+                IR::Block(block) => {
                     let block = Brainfuck::compress(block);
-                    compressed.push(LongInst::Block(block));
+                    compressed.push(IR::Block(block));
                 },
                 other => {
                     compressed.push(other);
@@ -122,43 +122,43 @@ impl Brainfuck {
         compressed
     }
 
-    pub fn fold_reset_loops(prog: Vec<LongInst>) -> Vec<LongInst> {
+    pub fn fold_reset_loops(prog: Vec<IR>) -> Vec<IR> {
         prog
             .into_iter()
             .map(|inst| match inst {
-                LongInst::Block(block) => {
+                IR::Block(block) => {
                     let folded = Brainfuck::fold_reset_loops(block);
                     if folded.len() == 1 {
                         match folded[0] {
-                            LongInst::Inc(1) | LongInst::Inc(-1) => return LongInst::Reset,
+                            IR::Inc(1) | IR::Inc(-1) => return IR::Reset,
                             _ => {}
                         }
                     }
-                    LongInst::Block(folded)
+                    IR::Block(folded)
                 },
                 other => other,
             })
             .collect()
     }
 
-    pub fn fold_move_loops(prog: Vec<LongInst>) -> Vec<LongInst> {
+    pub fn fold_move_loops(prog: Vec<IR>) -> Vec<IR> {
         prog
             .into_iter()
             .map(|inst| {
                 match inst {
-                    LongInst::Block(block) => {
+                    IR::Block(block) => {
                         let folded = Brainfuck::fold_move_loops(block);
-                        if folded.iter().all(|x| matches!(x, LongInst::Inc(_) | LongInst::Shift(_))) {
+                        if folded.iter().all(|x| matches!(x, IR::Inc(_) | IR::Shift(_))) {
                             let mut arg: i32 = 0;
                             let mut changes: BTreeMap<i32, i32> = BTreeMap::new();
                             changes.insert(0, 0);
                             for ins in &folded {
                                 match ins {
-                                    LongInst::Inc(n) => {
+                                    IR::Inc(n) => {
                                         let entry = changes.entry(arg).or_insert(0);
                                         *entry += *n;
                                     },
-                                    LongInst::Shift(n) => {
+                                    IR::Shift(n) => {
                                         arg += *n;
                                     },
                                     _ => {}
@@ -169,46 +169,46 @@ impl Brainfuck {
                                     let payload: Vec<(i32, i32)> = changes.into_iter()
                                         .filter(|&(arg, weight)| arg != 0 && weight != 0)
                                         .collect();
-                                    return LongInst::Move(payload);
+                                    return IR::Move(payload);
                                 }
                             }
                         }
-                        LongInst::Block(folded)
+                        IR::Block(folded)
                     },
                     other => other,
                 }
             }).collect()
     }
 
-    pub fn fold_skip_loops(prog: Vec<LongInst>) -> Vec<LongInst> {
+    pub fn fold_skip_loops(prog: Vec<IR>) -> Vec<IR> {
         prog
             .into_iter()
             .map(|inst| match inst {
-                LongInst::Block(block) => {
+                IR::Block(block) => {
                     let folded = Brainfuck::fold_skip_loops(block);
                     if folded.len() == 1 {
-                        if let LongInst::Shift(n) = folded[0] {
-                            return LongInst::Skip(n);
+                        if let IR::Shift(n) = folded[0] {
+                            return IR::Skip(n);
                         }
                     }
-                    LongInst::Block(folded)
+                    IR::Block(folded)
                 },
                 other => other,
             })
             .collect()
     }
 
-    pub fn flatten(prog: Vec<LongInst>) -> Vec<Inst> {
-        fn pick_inc<I: Iterator<Item = LongInst>>(iter: &mut Peekable<I>) -> u8 {
-            if let Some(LongInst::Inc(value)) = iter.peek() {
+    pub fn flatten(prog: Vec<IR>) -> Vec<Inst> {
+        fn pick_inc<I: Iterator<Item = IR>>(iter: &mut Peekable<I>) -> u8 {
+            if let Some(IR::Inc(value)) = iter.peek() {
                 let value = *value;
                 iter.next();
                 return value as u8;
             }
             0
         }
-        fn pick_shift<I: Iterator<Item = LongInst>>(iter: &mut Peekable<I>) -> i16 {
-            if let Some(LongInst::Shift(delta)) = iter.peek() {
+        fn pick_shift<I: Iterator<Item = IR>>(iter: &mut Peekable<I>) -> i16 {
+            if let Some(IR::Shift(delta)) = iter.peek() {
                 let delta = *delta;
                 if i16::MIN as i32 <= delta && delta <= i16::MAX as i32 {
                     iter.next();
@@ -217,37 +217,37 @@ impl Brainfuck {
             }
             0
         }
-        fn unmatched_flatten<I: Iterator<Item = LongInst>>(iter: &mut Peekable<I>) -> Vec<Inst> {
+        fn unmatched_flatten<I: Iterator<Item = IR>>(iter: &mut Peekable<I>) -> Vec<Inst> {
             let mut unmatched = Vec::new();
             while let Some(inst) = iter.next() {
                 match inst {
-                    LongInst::Inc(inc) => {
+                    IR::Inc(inc) => {
                         let inc = inc as u8;
                         let delta = pick_shift(iter);
                         unmatched.push(Inst{cmd: InstType::ShiftInc, arg: 0, inc: inc, delta: delta});
                     },
-                    LongInst::Shift(amount) => {
+                    IR::Shift(amount) => {
                         let amount = amount;
                         let inc = pick_inc(iter);
                         let delta = pick_shift(iter);
                         unmatched.push(Inst{cmd: InstType::ShiftInc, arg: amount, inc: inc, delta: delta});
                     },
-                    LongInst::Output => {
+                    IR::Output => {
                         let inc = pick_inc(iter);
                         let delta = pick_shift(iter);
                         unmatched.push(Inst{cmd: InstType::Output, arg: 0, inc: inc, delta: delta});
                     },
-                    LongInst::Input => {
+                    IR::Input => {
                         let inc = pick_inc(iter);
                         let delta = pick_shift(iter);
                         unmatched.push(Inst{cmd: InstType::Input, arg: 0, inc: inc, delta: delta});
                     },
-                    LongInst::Reset => {
+                    IR::Reset => {
                         let inc = pick_inc(iter);
                         let delta = pick_shift(iter);
                         unmatched.push(Inst{cmd: InstType::Set, arg: 0, inc: inc, delta: delta});
                     },
-                    LongInst::Move(targets) => {
+                    IR::Move(targets) => {
                         let delta = pick_shift(iter);
                         if let Some((last, rest)) = targets.split_last() {
                             for &(arg, weight) in rest {
@@ -258,12 +258,12 @@ impl Brainfuck {
                             unreachable!("Num of targets of move must at least one.");
                         }
                     },
-                    LongInst::Skip(arg) => {
+                    IR::Skip(arg) => {
                         let inc = pick_inc(iter);
                         let delta = pick_shift(iter);
                         unmatched.push(Inst{cmd: InstType::Skip, arg: arg, inc: inc, delta: delta});
                     },
-                    LongInst::Block(block) => {
+                    IR::Block(block) => {
                         let mut blockiter = block.into_iter().peekable();
                         let inc = pick_inc(&mut blockiter);
                         let delta = pick_shift(&mut blockiter);
