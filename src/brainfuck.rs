@@ -1,4 +1,5 @@
-use std::io::{self, Read, Write};
+use std::fmt::Write;
+use std::io::{self, Read, Write as OtherWrite};
 use std::collections::BTreeMap;
 use std::iter::Peekable;
 
@@ -365,5 +366,65 @@ impl Brainfuck {
             }
             self.ip += 1;
         }
+    }
+
+    pub fn to_c(prog: &[Inst], memory_size: usize) -> String {
+        let mut code = String::new();
+        writeln!(code, "#include <stdio.h>").unwrap();
+        writeln!(code, "#include <stdint.h>").unwrap();
+        writeln!(code, "uint8_t mem[{}];", memory_size).unwrap();
+        writeln!(code, "uint8_t *ptr;").unwrap();
+        writeln!(code, "int main() {{").unwrap();
+        writeln!(code, "ptr = mem;").unwrap();
+
+        for inst in prog {
+            let Inst { cmd, arg, inc, delta } = inst;
+            match cmd {
+                InstType::ShiftInc => {
+                    write!(code, "ptr += {};", arg).unwrap();
+                    write!(code, "*ptr += {};", inc).unwrap();
+                    write!(code, "ptr += {};", delta).unwrap();
+                },
+                InstType::Output => {
+                    write!(code, "putchar(*ptr);").unwrap();
+                    write!(code, "*ptr += {};", inc).unwrap();
+                    write!(code, "ptr += {};", delta).unwrap();
+                },
+                InstType::Input => {
+                    write!(code, "*ptr = getchar();").unwrap();
+                    write!(code, "*ptr += {};", inc).unwrap();
+                    write!(code, "ptr += {};", delta).unwrap();
+                },
+                InstType::Skip => {
+                    write!(code, "while (*ptr) {{ ptr += {}; }}", arg).unwrap();
+                    write!(code, "*ptr += {};", inc).unwrap();
+                    write!(code, "ptr += {};", delta).unwrap();
+                },
+                InstType::Set => {
+                    write!(code, "*ptr = {};", inc).unwrap();
+                    write!(code, "ptr += {};", delta).unwrap();
+                },
+                InstType::Mulzero => {
+                    write!(code, "if (*ptr) {{ *(ptr + {}) += *ptr * {}; *ptr = 0; }}", arg, inc).unwrap();
+                    write!(code, "ptr += {};", delta).unwrap();
+                },
+                InstType::Mul => {
+                    write!(code, "if (*ptr) {{ *(ptr + {}) += *ptr * {}; }}", arg, inc).unwrap();
+                    write!(code, "ptr += {};", delta).unwrap();
+                },
+                InstType::Open => {
+                    write!(code, "while (*ptr) {{").unwrap();
+                    write!(code, "*ptr += {};", inc).unwrap();
+                    write!(code, "ptr += {};", delta).unwrap();
+                },
+                InstType::Close => {
+                    write!(code, "}}").unwrap();
+                },
+            }
+            writeln!(code, "",).unwrap();
+        }
+        writeln!(code, "return 0;").unwrap();
+        writeln!(code, "}}").unwrap();
+        code
     }
 }
