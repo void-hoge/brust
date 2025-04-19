@@ -24,6 +24,8 @@ fn main() {
     prog = Brainfuck::fold_reset_loops(prog);
     prog = Brainfuck::fold_move_loops(prog);
     prog = Brainfuck::fold_skip_loops(prog);
+    prog = Brainfuck::optimize_const_loops(prog);
+    println!("{:?}", prog);
     let flat = Brainfuck::flatten(prog);
     let mut bfi = Brainfuck::new(args.length);
 

@@ -2,6 +2,13 @@ use std::io::{self, Read, Write};
 use std::collections::BTreeMap;
 use std::iter::Peekable;
 
+fn gcd(mut a: u64, mut b: u64) -> u64{
+    while b > 0 {
+        (a, b) = (b, a % b);
+    }
+    a
+}
+
 #[derive(Debug, PartialEq)]
 pub enum InstType {
     ShiftInc,
@@ -31,6 +38,7 @@ pub enum IR {
     Input,
     Reset,
     Move(Vec<(i32, i32)>),
+    Mul(i32, u8),
     Block(Vec<IR>),
     Skip(i32),
 }
@@ -39,6 +47,13 @@ pub struct Brainfuck {
     ip: usize,
     dp: usize,
     memory: Vec<u8>,
+}
+
+#[derive(Debug)]
+pub enum AccessType {
+    Inc(u8),
+    Set(u8),
+    Untracked,
 }
 
 #[allow(dead_code)]
@@ -149,22 +164,22 @@ impl Brainfuck {
                     IR::Block(block) => {
                         let folded = Brainfuck::fold_move_loops(block);
                         if folded.iter().all(|x| matches!(x, IR::Inc(_) | IR::Shift(_))) {
-                            let mut arg: i32 = 0;
+                            let mut delta: i32 = 0;
                             let mut changes: BTreeMap<i32, i32> = BTreeMap::new();
                             changes.insert(0, 0);
                             for ins in &folded {
                                 match ins {
                                     IR::Inc(n) => {
-                                        let entry = changes.entry(arg).or_insert(0);
+                                        let entry = changes.entry(delta).or_insert(0);
                                         *entry += *n;
                                     },
                                     IR::Shift(n) => {
-                                        arg += *n;
+                                        delta += *n;
                                     },
                                     _ => {}
                                 }
                             }
-                            if arg == 0 {
+                            if delta == 0 {
                                 if let Some(-1) = changes.get(&0) {
                                     let payload: Vec<(i32, i32)> = changes.into_iter()
                                         .filter(|&(arg, weight)| arg != 0 && weight != 0)
@@ -196,6 +211,247 @@ impl Brainfuck {
                 other => other,
             })
             .collect()
+    }
+
+    pub fn optimize_const_loops_(prog: Vec<IR>) -> (Vec<IR>, Option<BTreeMap<i32, AccessType>>) {
+        let mut access = BTreeMap::<i32, AccessType>::new();
+        access.insert(0, AccessType::Inc(0));
+        let mut delta: i32 = 0;
+        let mut optimizable = true;
+        let mut analyzed: Vec<_> = prog
+            .into_iter()
+            .map(|inst| {
+                match inst {
+                    IR::Block(block) => {
+                        let (blk_optimized, blk_result) = Brainfuck::optimize_const_loops_(block);
+                        if let Some(blk_access) = blk_result {
+                            // delta of the block is 0.
+                            for (pos, cell) in blk_access {
+                                match cell {
+                                    AccessType::Set(value) => {
+                                        access.insert(delta + pos, AccessType::Set(value));
+                                    },
+                                    AccessType::Inc(_) | AccessType::Untracked => {
+                                        access.insert(delta + pos, AccessType::Untracked);
+                                    },
+                                }
+                            }
+                        } else {
+                            optimizable = false;
+                        }
+                        IR::Block(blk_optimized)
+                    }
+                    IR::Output | IR::Input => {
+                        optimizable = false;
+                        inst
+                    },
+                    IR::Inc(inc) => {
+                        let entry = access.entry(delta).or_insert(AccessType::Inc(0));
+                        match entry {
+                            AccessType::Inc(incr) => {
+                                *entry = AccessType::Inc(*incr + inc as u8);
+                            },
+                            AccessType::Set(value) => {
+                                *entry = AccessType::Set(*value + inc as u8);
+                            },
+                            AccessType::Untracked => {
+                                *entry = AccessType::Untracked;
+                            },
+                        }
+                        inst
+                    },
+                    IR::Shift(n) => {
+                        delta += n;
+                        inst
+                    },
+                    IR::Reset => {
+                        access.insert(delta, AccessType::Set(0));
+                        inst
+                    },
+                    IR::Skip(_) => {
+                        optimizable = false;
+                        inst
+                    },
+                    IR::Move(ref targets) => {
+                        access.insert(delta, AccessType::Set(0));
+                        for (pos, weight) in targets {
+                            assert!(*pos != 0);
+                            assert!(*weight != 0);
+                            access.insert(delta + pos, AccessType::Untracked);
+                        }
+                        inst
+                    },
+                    IR::Mul(..) => {
+                        unreachable!();
+                    }
+                }
+            }).collect();
+        if optimizable && delta == 0 {
+            if let Some(AccessType::Inc(inc)) = access.get(&0) {
+                if *inc == 255 {
+                    let mut dlt = 0;
+                    analyzed = analyzed
+                        .into_iter()
+                        .map(|inst| {
+                            match inst {
+                                IR::Inc(n) => {
+                                    if dlt == 0 {
+                                        IR::Reset
+                                    } else {
+                                        IR::Mul(-dlt, n as u8)
+                                    }
+                                },
+                                IR::Shift(n) => {
+                                    dlt += n;
+                                    inst
+                                },
+                                other => other,
+                            }
+                        }).collect();
+                    analyzed.push(IR::Reset);
+                    access.insert(0, AccessType::Set(0));
+                } else if gcd(*inc as u8 as u64, 256) == 1 {
+                    if access.iter().filter(|(&key, _)| key != 0).all(|(_, value)| matches!(value, AccessType::Set(_))) {
+                        analyzed.push(IR::Reset);
+                        access.insert(0, AccessType::Set(0));
+                    }
+                } else {
+                    // ループを抜けたということは 0 確定
+                    access.insert(0, AccessType::Set(0));
+                }
+            }
+            (analyzed, Some(access))
+        } else {
+            (analyzed, None)
+        }
+    }
+
+    pub fn optimize_const_loops(prog: Vec<IR>) -> Vec<IR> {
+        fn optimize(prog: Vec<IR>) -> (Vec<IR>, Option<BTreeMap<i32, AccessType>>) {
+            let mut access = BTreeMap::<i32, AccessType>::new();
+            access.insert(0, AccessType::Inc(0));
+            let mut delta: i32 = 0;
+            let mut optimizable = true;
+            let optimized: Vec<_> = prog.into_iter().map(|inst| {
+                match inst {
+                    IR::Output | IR::Input => {
+                        optimizable = false;
+                        inst
+                    },
+                    IR::Shift(n) => {
+                        delta += n;
+                        inst
+                    },
+                    IR::Reset => {
+                        access.insert(delta, AccessType::Set(0));
+                        inst
+                    },
+                    IR::Skip(_) => {
+                        optimizable = false;
+                        inst
+                    },
+                    IR::Move(ref targets) => {
+                        access.insert(delta, AccessType::Set(0));
+                        for (pos, _weight) in targets {
+                            access.insert(delta + pos, AccessType::Untracked);
+                        }
+                        inst
+                    },
+                    IR::Inc(n) => {
+                        if let Some(entry) = access.get_mut(&delta) {
+                            match entry {
+                                AccessType::Inc(incr) => {
+                                    *entry = AccessType::Inc(*incr + n as u8);
+                                },
+                                AccessType::Set(value) => {
+                                    *entry = AccessType::Set(*value + n as u8);
+                                },
+                                AccessType::Untracked => {
+                                    *entry = AccessType::Untracked;
+                                },
+                            }
+                        } else {
+                            access.insert(delta, AccessType::Inc(n as u8));
+                        }
+                        inst
+                    }
+                    IR::Block(block) => {
+                        let (blk_optimized, blk_result) = optimize(block);
+                        if let Some(blk_access) = blk_result {
+                            for (pos, cell) in blk_access {
+                                match cell {
+                                    AccessType::Set(value) => {
+                                        access.insert(delta + pos, AccessType::Set(value));
+                                    },
+                                    AccessType::Inc(_) | AccessType::Untracked => {
+                                        access.insert(delta + pos, AccessType::Untracked);
+                                    }
+                                }
+                            }
+                        }
+                        IR::Block(blk_optimized)
+                    }
+                    IR::Mul(..) => unreachable!(),
+                }
+            }).collect();
+            get_optimized(optimized, optimizable, delta, access)
+        }
+
+        fn get_optimized(mut prog: Vec<IR>,
+                         optimizable: bool,
+                         delta: i32,
+                         mut access: BTreeMap<i32, AccessType>) -> (Vec<IR>, Option<BTreeMap<i32, AccessType>>) {
+            if optimizable && delta == 0 {
+                if let Some(AccessType::Inc(update)) = access.get(&0) {
+                    if *update == 255 {
+                        let mut ptr = 0;
+                        let mut optimized = Vec::<_>::new();
+                        for inst in prog {
+                            match inst {
+                                IR::Shift(n) => {
+                                    ptr += n;
+                                    optimized.push(inst);
+                                },
+                                IR::Inc(n) => {
+                                    if ptr != 0 {
+                                        if let Some(AccessType::Inc(_)) = access.get(&ptr) {
+                                            optimized.push(IR::Mul(-ptr, n as u8));
+                                        }
+                                    }
+                                },
+                                other => optimized.push(other),
+                            }
+                        }
+                        optimized.push(IR::Reset);
+                        access.insert(0, AccessType::Set(0));
+                        return (optimized, Some(access));
+                    } else if gcd(*update as u64, 256) == 1 {
+                        if access.iter().filter(|(&key, _)| key != 0).all(|(_, value)| matches!(value, AccessType::Set(_))) {
+                            prog.push(IR::Reset);
+                            access.insert(0, AccessType::Set(0));
+                        }
+                        return (prog, Some(access));
+                    } else {
+                        access.insert(0, AccessType::Set(0));
+                        return (prog, Some(access));
+                    }
+                } else {
+                    return (prog, Some(access));
+                }
+            } else {
+                return (prog, None);
+            }
+        }
+        
+        prog.into_iter().map(|inst| {
+            match inst {
+                IR::Block(block) => {
+                    let (optimized, _) = optimize(block);
+                    IR::Block(optimized)
+                },
+                other => other,
+            }
+        }).collect()
     }
 
     pub fn flatten(prog: Vec<IR>) -> Vec<Inst> {
@@ -258,6 +514,10 @@ impl Brainfuck {
                             unreachable!("Num of targets of move must at least one.");
                         }
                     },
+                    IR::Mul(arg, weight) => {
+                        let delta = pick_shift(iter);
+                        unmatched.push(Inst{cmd: InstType::Mul, arg: arg, inc: weight, delta: delta});
+                    }
                     IR::Skip(arg) => {
                         let inc = pick_inc(iter);
                         let delta = pick_shift(iter);
